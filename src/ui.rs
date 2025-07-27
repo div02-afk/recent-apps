@@ -149,7 +149,7 @@ impl eframe::App for Content {
                 toggle_window(window_handle.as_raw(), false);
             }
         });
-
+        
         toggle_window(window_handle.as_raw(), should_show);
     }
 }

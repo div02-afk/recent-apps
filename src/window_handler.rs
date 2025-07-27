@@ -1,9 +1,10 @@
 use windows::Win32::{
     Foundation::HWND,
     UI::{
-        Input::KeyboardAndMouse::{EnableWindow, SetFocus},
+        Input::KeyboardAndMouse::{ EnableWindow, SetFocus },
         WindowsAndMessaging::{
             BringWindowToTop,
+            CloseWindow,
             ShowWindow,
             SwitchToThisWindow,
             SW_MINIMIZE,
@@ -29,13 +30,10 @@ pub fn toggle_window(handle: RawWindowHandle, visible: bool) {
                 let _ = focus_window(hwnd);
             } else {
                 // To hide: minimize instead of SW_HIDE to avoid the issue
-                let _ = ShowWindow(hwnd, SW_MINIMIZE);
+                // let _ = ShowWindow(hwnd, SW_MINIMIZE);
+                let _ = CloseWindow(hwnd);
                 // Remove from taskbar by changing extended style
-                // SetWindowLongW(
-                //     hwnd,
-                //     GWL_EXSTYLE,
-                //     GetWindowLongW(hwnd, GWL_EXSTYLE) | (WS_EX_TOOLWINDOW.0 as i32)
-                // );
+                std::process::exit(0);
             }
         }
         _ => {
@@ -48,6 +46,6 @@ pub fn focus_window(hwnd: HWND) {
     unsafe {
         let _ = SwitchToThisWindow(hwnd, true);
         let _ = SetFocus(Some(hwnd));
-        let _ = EnableWindow(hwnd,true);
+        let _ = EnableWindow(hwnd, true);
     }
 }
