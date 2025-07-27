@@ -1,8 +1,15 @@
 use windows::Win32::{
     Foundation::HWND,
-    UI::WindowsAndMessaging::{
-        BringWindowToTop, ShowWindow, SwitchToThisWindow, SW_MINIMIZE, SW_NORMAL, SW_RESTORE,
-        SW_SHOWNORMAL,
+    UI::{
+        Input::KeyboardAndMouse::{EnableWindow, SetFocus},
+        WindowsAndMessaging::{
+            BringWindowToTop,
+            ShowWindow,
+            SwitchToThisWindow,
+            SW_MINIMIZE,
+            SW_RESTORE,
+            SW_SHOWNORMAL,
+        },
     },
 };
 use winit::raw_window_handle::RawWindowHandle;
@@ -10,8 +17,9 @@ use winit::raw_window_handle::RawWindowHandle;
 pub fn toggle_window(handle: RawWindowHandle, visible: bool) {
     match handle {
         RawWindowHandle::Win32(win32_handle) => unsafe {
-            let hwnd =
-                windows::Win32::Foundation::HWND(win32_handle.hwnd.get() as *mut std::ffi::c_void);
+            let hwnd = windows::Win32::Foundation::HWND(
+                win32_handle.hwnd.get() as *mut std::ffi::c_void
+            );
 
             if visible {
                 // To show: restore from minimized or show normally
@@ -29,7 +37,7 @@ pub fn toggle_window(handle: RawWindowHandle, visible: bool) {
                 //     GetWindowLongW(hwnd, GWL_EXSTYLE) | (WS_EX_TOOLWINDOW.0 as i32)
                 // );
             }
-        },
+        }
         _ => {
             println!("Unsupported platform or handle type");
         }
@@ -39,5 +47,7 @@ pub fn toggle_window(handle: RawWindowHandle, visible: bool) {
 pub fn focus_window(hwnd: HWND) {
     unsafe {
         let _ = SwitchToThisWindow(hwnd, true);
+        let _ = SetFocus(Some(hwnd));
+        let _ = EnableWindow(hwnd,true);
     }
 }

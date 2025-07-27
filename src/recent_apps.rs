@@ -1,4 +1,4 @@
-use windows::core::{Error, GUID, PWSTR};
+use windows::core::{Error, GUID};
 use windows::Win32::{
     Foundation::{self, HWND, LPARAM},
     Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_CLOAKED},
@@ -18,8 +18,6 @@ use windows_result::BOOL;
 pub struct WindowInfo {
     pub hwnd: HWND,
     pub title: String,
-    pub class_name: String,
-    pub process_id: u32,
 }
 
 impl PartialEq for WindowInfo {
@@ -87,8 +85,6 @@ unsafe extern "system" fn enum_windows_proc(hwnd: HWND, lparam: LPARAM) -> BOOL 
                 open_windows.push(WindowInfo {
                     hwnd,
                     title,
-                    class_name,
-                    process_id,
                 });
                 // println!(
                 //     "GUI Window - HWND: {:?}, Title: \"{}\", Class: \"{}\", PID: {}",
@@ -103,7 +99,7 @@ unsafe extern "system" fn enum_windows_proc(hwnd: HWND, lparam: LPARAM) -> BOOL 
     BOOL(1) // Continue enumeration
 }
 
-pub fn get_open_windows(desktop_manager: &IVirtualDesktopManager) -> Vec<WindowInfo> {
+pub fn get_open_windows() -> Vec<WindowInfo> {
     unsafe {
         let mut open_windows: Vec<WindowInfo> = Vec::new();
         let _ = EnumWindows(

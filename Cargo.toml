@@ -10,9 +10,6 @@ windows-key-listener = "0.2.0"
 rdev = { git = "https://github.com/fufesou/rdev" }
 tokio = { version = "1.47.0", features = ["full"] }
 winit = "0.30.11"
-egui-winit = "0.32.0"
-egui-wgpu = "0.32.0"
-pollster = "0.4.0"
 windows = { version = "0.61.3", features = [
     "Win32_System_Com",
     "Win32_UI_Shell",
