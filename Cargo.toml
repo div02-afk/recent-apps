@@ -1,0 +1,16 @@
+[package]
+name = "recent-apps"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+eframe = "0.32.0"
+egui = "0.32.0"
+windows-key-listener = "0.2.0"
+rdev = { git = "https://github.com/fufesou/rdev" }
+tokio = { version = "1.47.0", features = ["full"] }
+winit = "0.30.11"
+egui-winit = "0.32.0"
+egui-wgpu = "0.32.0"
+pollster = "0.4.0"
+windows = "0.61.3"
