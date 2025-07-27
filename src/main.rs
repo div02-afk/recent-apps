@@ -1,37 +1,42 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 #![allow(rustdoc::missing_crate_level_docs)] // it's an example
-
-use eframe::{ egui, WindowBuilderHook };
-use egui::{ Key, Pos2, ScrollArea, Vec2, ViewportBuilder };
-use rdev::{ listen, Event, EventType };
-use std::sync::{ atomic::{ AtomicBool, Ordering }, Arc, Mutex };
+mod recent_apps;
+mod window_handler;
+use crate::recent_apps::{create_virtual_desktop_manager, get_open_windows};
+use crate::window_handler::{focus_window, toggle_window};
+use eframe::{egui, WindowBuilderHook};
+use egui::{Key, Pos2, ScrollArea, TextBuffer, Vec2, ViewportBuilder};
+use rdev::{listen, Event, EventType};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc, Mutex,
+};
 use tokio::sync::mpsc;
 use tokio::task::spawn_blocking;
-use tokio::{ runtime::Runtime, sync::broadcast };
+use tokio::{runtime::Runtime, sync::broadcast};
 use windows::Win32::{
     Foundation::HWND,
-    UI::WindowsAndMessaging::{
-        BringWindowToTop,
-        ShowWindow,
-        SW_MINIMIZE,
-        SW_RESTORE,
-        SW_SHOWNORMAL,
+    UI::{
+        Shell::IVirtualDesktopManager,
+        WindowsAndMessaging::{
+            BringWindowToTop, ShowWindow, SW_MINIMIZE, SW_RESTORE, SW_SHOWNORMAL,
+        },
     },
 };
-use winit::raw_window_handle::{ HasWindowHandle, RawWindowHandle, WindowHandle };
+use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle, WindowHandle};
 type SharedContext = Arc<Mutex<Option<egui::Context>>>;
 
 async fn handle_event(
     event: Event,
     alt_pressed: &Arc<AtomicBool>,
     window_visible: &Arc<AtomicBool>,
-    shared_ctx: SharedContext
+    shared_ctx: SharedContext,
 ) {
     match event.event_type {
         EventType::KeyPress(key) => {
             if key == rdev::Key::Alt {
                 alt_pressed.store(true, Ordering::SeqCst);
-            } else if key == rdev::Key::CapsLock && alt_pressed.load(Ordering::SeqCst) {
+            } else if key == rdev::Key::Tab && alt_pressed.load(Ordering::SeqCst) {
                 // Toggle window visibility
                 let current = window_visible.load(Ordering::SeqCst);
                 window_visible.store(!current, Ordering::SeqCst);
@@ -58,36 +63,9 @@ async fn handle_event(
     }
 }
 
-fn toggle_window(handle: RawWindowHandle, visible: bool) {
-    match handle {
-        RawWindowHandle::Win32(win32_handle) => unsafe {
-            let hwnd = windows::Win32::Foundation::HWND(
-                win32_handle.hwnd.get() as *mut std::ffi::c_void
-            );
+static TITLE: &str = "RecentApps++";
 
-            if visible {
-                // To show: restore from minimized or show normally
-                let _ = ShowWindow(hwnd, SW_RESTORE);
-                let _ = ShowWindow(hwnd, SW_SHOWNORMAL);
-                let _ = BringWindowToTop(hwnd);
-            } else {
-                // To hide: minimize instead of SW_HIDE to avoid the issue
-                let _ = ShowWindow(hwnd, SW_MINIMIZE);
-                // Remove from taskbar by changing extended style
-                // SetWindowLongW(
-                //     hwnd,
-                //     GWL_EXSTYLE,
-                //     GetWindowLongW(hwnd, GWL_EXSTYLE) | (WS_EX_TOOLWINDOW.0 as i32)
-                // );
-            }
-        }
-        _ => {
-            println!("Unsupported platform or handle type");
-        }
-    }
-}
 fn main() -> eframe::Result {
-    let title = "APP".to_string();
     let alt_pressed = Arc::new(AtomicBool::new(false));
     let window_visible = Arc::new(AtomicBool::new(true)); // Start with window visible
     let shared_ctx: SharedContext = Arc::new(Mutex::new(None));
@@ -100,21 +78,20 @@ fn main() -> eframe::Result {
 
     runtime.spawn(async move {
         let listener = spawn_blocking(|| {
-            if
-                let Err(error) = listen(move |event| {
-                    let ctrl_pressed_clone = Arc::clone(&ctrl_pressed_clone);
-                    let window_visible_clone = Arc::clone(&window_visible_clone);
-                    let shared_ctx_clone = Arc::clone(&shared_ctx_clone);
-                    tokio::spawn(async move {
-                        handle_event(
-                            event,
-                            &ctrl_pressed_clone,
-                            &window_visible_clone,
-                            shared_ctx_clone
-                        ).await;
-                    });
-                })
-            {
+            if let Err(error) = listen(move |event| {
+                let ctrl_pressed_clone = Arc::clone(&ctrl_pressed_clone);
+                let window_visible_clone = Arc::clone(&window_visible_clone);
+                let shared_ctx_clone = Arc::clone(&shared_ctx_clone);
+                tokio::spawn(async move {
+                    handle_event(
+                        event,
+                        &ctrl_pressed_clone,
+                        &window_visible_clone,
+                        shared_ctx_clone,
+                    )
+                    .await;
+                });
+            }) {
                 println!("Error: {:?}", error);
             }
         });
@@ -123,7 +100,7 @@ fn main() -> eframe::Result {
     });
     let native_options = eframe::NativeOptions {
         viewport: ViewportBuilder {
-            title: Some(title),
+            title: Some(TITLE.to_string()),
             app_id: Some("123123123".to_string()),
             active: Some(true),
             position: Some(Pos2::ZERO),
@@ -156,12 +133,25 @@ fn main() -> eframe::Result {
         centered: true,
         ..Default::default()
     };
+
+    let desktop_manager = create_virtual_desktop_manager();
+    if desktop_manager.is_err() {
+        panic!("Error creating desktop manager");
+    }
+    let desktop_manager = desktop_manager.unwrap();
+
     // let options = eframe::NativeOptions::default();
 
     let r = eframe::run_native(
         "Keyboard events",
         native_options,
-        Box::new(move |_cc| Ok(Box::new(Content::new(window_visible, shared_ctx))))
+        Box::new(move |_cc| {
+            Ok(Box::new(Content::new(
+                window_visible,
+                shared_ctx,
+                desktop_manager,
+            )))
+        }),
     );
 
     return r;
@@ -169,57 +159,71 @@ fn main() -> eframe::Result {
 
 struct Content {
     text: String,
+    search_text: String,
     window_visible: Arc<AtomicBool>,
     shared_ctx: SharedContext,
+    desktop_manager: IVirtualDesktopManager,
 }
 
 impl Content {
-    fn new(window_visible: Arc<AtomicBool>, shared_ctx: SharedContext) -> Self {
+    fn new(
+        window_visible: Arc<AtomicBool>,
+        shared_ctx: SharedContext,
+        desktop_manager: IVirtualDesktopManager,
+    ) -> Self {
         Self {
             text: String::new(),
+            search_text: String::new(),
             window_visible,
             shared_ctx,
+            desktop_manager,
         }
     }
 }
-
-// impl Default for Content {
-//     fn default() -> Self {
-//         Self {
-//             text: String::new(),
-//             window_visible: Arc::new(AtomicBool::new(true)),
-//             ctx_tx,
-//         }
-//     }
-// }
-// TODO: move context to main and handle_event
-// TODO: use context in handle_event to trigger update
 
 impl eframe::App for Content {
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         if let Ok(mut ctx_guard) = self.shared_ctx.lock() {
             *ctx_guard = Some(ctx.clone());
         }
+        let mut open_windows = get_open_windows(&self.desktop_manager);
+        open_windows.sort();
+
         let should_show = self.window_visible.load(Ordering::SeqCst);
-        // println!("should show {}", should_show);
-        // Only show UI if window should be visible
+        let window_handle = frame.window_handle().unwrap();
+
         egui::CentralPanel::default().show(ctx, |ui| {
-            ui.heading("Recent Apps");
-            if ui.button("Clear").clicked() {
-                self.text.clear();
-            }
+            ui.heading(TITLE);
+            ui.text_edit_singleline(&mut self.search_text)
+                .request_focus();
             ScrollArea::vertical()
                 .auto_shrink(false)
                 .stick_to_bottom(true)
                 .show(ui, |ui| {
-                    ui.label(&self.text);
+                    for i in open_windows
+                        .iter()
+                        .filter(|open_window| {
+                            open_window
+                                .title
+                                .to_lowercase()
+                                .contains(&self.search_text.to_lowercase())
+                        })
+                        .filter(|open_window| open_window.title.to_lowercase() != TITLE.to_string())
+                    {
+                        if ui.button(&i.title).clicked() {
+                            println!("{} clicked", i.title);
+                            focus_window(i.hwnd);
+                            self.window_visible.fetch_not(Ordering::SeqCst);
+                            toggle_window(window_handle.as_raw(), false);
+                        }
+                    }
                 });
 
             if ctx.input(|i| i.key_released(Key::A)) {
                 self.text.push_str("\nReleased");
             }
         });
-        let window_handle = frame.window_handle().unwrap();
+
         toggle_window(window_handle.as_raw(), should_show);
     }
 }

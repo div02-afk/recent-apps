@@ -13,4 +13,10 @@ winit = "0.30.11"
 egui-winit = "0.32.0"
 egui-wgpu = "0.32.0"
 pollster = "0.4.0"
-windows = "0.61.3"
+windows = { version = "0.61.3", features = [
+    "Win32_System_Com",
+    "Win32_UI_Shell",
+    "Win32_Graphics",
+    "Win32_Graphics_Dwm",
+] }
+windows-result = "0.3.4"
